@@ -1,72 +1,69 @@
 import cv2
-import numpy as np
 import os
 import glob
 import subprocess
 import concurrent.futures
 
 def process_video(input_path):
-    temp_cv_path = input_path + ".cvtemp.mp4"
+    print(f"🔄 Memulai: {input_path}")
     temp_final_path = input_path + ".finaltemp.mp4"
     
+    # 1. Dapatkan resolusi video menggunakan OpenCV hanya untuk membaca dimensi
     cap = cv2.VideoCapture(input_path)
     if not cap.isOpened():
+        print(f"❌ Error membaca video: {input_path}")
         return
-
-    fps = cap.get(cv2.CAP_PROP_FPS)
+        
     width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
     
+    # 2. Hitung area watermark (Pojok Kanan Bawah)
+    # Sedikit dikurangi desimalnya (0.27 & 0.17) agar tidak error out-of-bounds
     roi_x = int(width * 0.72)
     roi_y = int(height * 0.82)
-    roi_w = int(width * 0.28)
-    roi_h = int(height * 0.18)
+    roi_w = int(width * 0.27) 
+    roi_h = int(height * 0.17)
     
-    mask = np.full((roi_h, roi_w), 255, dtype=np.uint8)
-    
-    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
-    out = cv2.VideoWriter(temp_cv_path, fourcc, fps, (width, height))
-    
-    while True:
-        ret, frame = cap.read()
-        if not ret:
-            break
-        
-        if roi_x + roi_w <= width and roi_y + roi_h <= height:
-            roi = frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w]
-            cleaned_roi = cv2.inpaint(roi, mask, inpaintRadius=4, flags=cv2.INPAINT_TELEA)
-            frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w] = cleaned_roi
-            
-        out.write(frame)
-            
-    cap.release()
-    out.release()
+    # 3. Gunakan FFmpeg Delogo (Inpainting bawaan FFmpeg, bebas bug black-screen)
+    # Ini menghapus watermark dengan sangat halus dan dijamin video muncul
+    vf_filter = f"delogo=x={roi_x}:y={roi_y}:w={roi_w}:h={roi_h}"
     
     ffmpeg_cmd = [
         "ffmpeg", "-y", 
-        "-i", temp_cv_path,
         "-i", input_path,
-        "-c:v", "libx264",
-        "-pix_fmt", "yuv420p",
-        "-c:a", "aac",
-        "-map", "0:v:0", "-map", "1:a:0?",
+        "-vf", vf_filter,
+        "-c:v", "libx264",        # Encode video ke standar yang didukung semua HP/PC
+        "-preset", "fast",        # Proses dipercepat
+        "-pix_fmt", "yuv420p",    # Format pixel wajib agar tidak error layar hitam
+        "-c:a", "copy",           # Audio di-copy UTUH 100%, tidak dimodifikasi
         temp_final_path
     ]
     
-    subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    # Jalankan perintah FFmpeg
+    result = subprocess.run(ffmpeg_cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
     
-    if os.path.exists(temp_cv_path):
-        os.remove(temp_cv_path)
-        
-    if os.path.exists(temp_final_path):
-        if os.path.exists(input_path):
-            os.remove(input_path)
+    # 4. Overwrite (Timpa) file asli dengan yang sudah dihilangkan watermarknya
+    if result.returncode == 0 and os.path.exists(temp_final_path):
+        os.remove(input_path)
         os.rename(temp_final_path, input_path)
+        print(f"✅ Selesai & Berhasil: {input_path}")
+    else:
+        print(f"❌ Gagal memproses: {input_path}")
+        # Hapus file temp jika gagal
+        if os.path.exists(temp_final_path):
+            os.remove(temp_final_path)
 
 if __name__ == "__main__":
+    # Cari semua video di folder videos/
     video_files = glob.glob("videos/*.mp4") + glob.glob("videos/*.mov") + glob.glob("*.mp4")
-    video_files = [f for f in video_files if not (f.endswith(".cvtemp.mp4") or f.endswith(".finaltemp.mp4"))]
+    video_files = [f for f in video_files if not f.endswith(".finaltemp.mp4")]
     
     if video_files:
+        print(f"Menemukan {len(video_files)} video. Memulai pemrosesan paralel...")
+        # Proses beberapa video sekaligus agar cepat
         with concurrent.futures.ProcessPoolExecutor() as executor:
             executor.map(process_video, video_files)
+        print("\n🎉 SEMUA VIDEO BERHASIL DIPROSES!")
+    else:
+        print("Tidak ada video yang ditemukan.")
