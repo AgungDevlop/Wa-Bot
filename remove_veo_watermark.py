@@ -1,31 +1,29 @@
 import cv2
 import numpy as np
 import os
-from moviepy.editor import VideoFileClip, concatenate_videoclips
 import glob
 
 def remove_veo_watermark_frame(frame):
-    """
-    Simple removal untuk Veo watermark (pojok kanan bawah)
-    """
     h, w = frame.shape[:2]
     
-    # Area watermark Veo biasanya di bottom-right (\~10-15% dari kanan bawah)
-    roi_x = int(w * 0.75)   # mulai dari 75% lebar
-    roi_y = int(h * 0.85)   # mulai dari 85% tinggi
-    roi_w = int(w * 0.25)
-    roi_h = int(h * 0.15)
+    # Area watermark Veo 3 biasanya di pojok kanan bawah
+    roi_x = int(w * 0.72)   # mulai dari 72% lebar
+    roi_y = int(h * 0.82)   # mulai dari 82% tinggi
+    roi_w = int(w * 0.28)
+    roi_h = int(h * 0.18)
+    
+    if roi_x + roi_w > w or roi_y + roi_h > h:
+        return frame
     
     roi = frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w].copy()
     
-    # Simple inpainting (isi dengan pixel sekitar)
+    # Mask untuk inpainting
     mask = np.zeros((roi_h, roi_w), dtype=np.uint8)
-    mask[:] = 255  # seluruh ROI
+    mask[:] = 255
     
-    # Inpaint
-    cleaned_roi = cv2.inpaint(roi, mask, inpaintRadius=3, flags=cv2.INPAINT_TELEA)
+    # Inpainting (cukup bagus untuk watermark semi-transparan)
+    cleaned_roi = cv2.inpaint(roi, mask, inpaintRadius=4, flags=cv2.INPAINT_TELEA)
     
-    # Tempel kembali
     frame[roi_y:roi_y+roi_h, roi_x:roi_x+roi_w] = cleaned_roi
     return frame
 
@@ -48,18 +46,23 @@ def process_video(input_path, output_path):
         
         cleaned = remove_veo_watermark_frame(frame)
         out.write(cleaned)
+        
         frame_count += 1
-        if frame_count % 100 == 0:
-            print(f"Processed {frame_count} frames...")
+        if frame_count % 200 == 0:
+            print(f"  ✓ Processed {frame_count} frames")
     
     cap.release()
     out.release()
-    print(f"Done: {output_path}")
+    print(f"✅ Selesai: {output_path}\n")
 
 if __name__ == "__main__":
     os.makedirs("cleaned", exist_ok=True)
     
-    # Proses semua video di folder videos/
-    for video_path in glob.glob("videos/*.mp4") + glob.glob("videos/*.mov"):
-        output_path = os.path.join("cleaned", os.path.basename(video_path))
-        process_video(video_path, output_path)
+    video_files = glob.glob("videos/*.mp4") + glob.glob("videos/*.mov") + glob.glob("*.mp4")
+    
+    if not video_files:
+        print("Tidak ada video ditemukan di folder videos/ atau root.")
+    else:
+        for video_path in video_files:
+            output_path = os.path.join("cleaned", os.path.basename(video_path))
+            process_video(video_path, output_path)
