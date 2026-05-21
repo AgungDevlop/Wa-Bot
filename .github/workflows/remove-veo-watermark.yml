@@ -9,6 +9,11 @@ on:
 jobs:
   remove-watermark:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+    
+    # WAJIB: Memberikan izin token GitHub Actions untuk melakukan Push/Commit ke repo Anda
+    permissions:
+      contents: write
 
     steps:
       - name: Checkout repository
@@ -18,6 +23,7 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+          cache: 'pip'
 
       - name: Install dependencies
         run: |
@@ -28,8 +34,20 @@ jobs:
       - name: Remove Watermark
         run: python remove_veo_watermark.py
 
-      - name: Upload cleaned videos
-        uses: actions/upload-artifact@v4
-        with:
-          name: cleaned-videos
-          path: cleaned/
+      # LANGKAH BARU: Melakukan Commit dan Push otomatis hasil video yang bersih
+      - name: Commit and Push cleaned videos
+        run: |
+          git config --local user.email "github-actions[bot]@users.noreply.github.com"
+          git config --local user.name "github-actions[bot]"
+          
+          git add videos/
+          
+          # Memeriksa apakah ada perubahan file video, jika ada baru lakukan commit
+          if ! git diff --staged --quiet; then
+            # PENTING: Gunakan [skip ci] di commit message agar tidak memicu infinite loop workflow
+            git commit -m "chore: auto-remove watermark from videos [skip ci]"
+            git push
+            echo "✅ Hasil video berhasil disimpan kembali ke repository!"
+          else
+            echo "ℹ️ Tidak ada perubahan video yang perlu dicommit."
+          fi
