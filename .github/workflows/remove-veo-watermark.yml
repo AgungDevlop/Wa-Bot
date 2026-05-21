@@ -1,10 +1,10 @@
 name: Remove Veo 3 Watermark
 
 on:
-  workflow_dispatch:  # Jalankan manual dari GitHub
+  workflow_dispatch:
   push:
     paths:
-      - 'videos/**'   # Otomatis jalan kalau upload video ke folder videos/
+      - 'videos/**'
 
 jobs:
   remove-watermark:
@@ -21,11 +21,12 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install opencv-python-headless numpy moviepy pillow
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+          pip install opencv-python-headless numpy
 
-      - name: Remove Watermark from Videos
-        run: |
-          python remove_veo_watermark.py
+      - name: Remove Watermark
+        run: python remove_veo_watermark.py
 
       - name: Upload cleaned videos
         uses: actions/upload-artifact@v4
